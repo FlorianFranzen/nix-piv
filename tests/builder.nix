@@ -78,7 +78,7 @@ in
 
   nodes.server = { config, ... }: {
     imports = [
-      ../modules/virtual-card.nix
+      ./virtual-card.nix
       ../modules/agent.nix
       ../modules/cache-signer.nix
     ];
