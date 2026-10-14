@@ -158,8 +158,10 @@ an SSH allowed signer, so human GPG-signed commits keep working).
   polkit (only these units, only for `allowedUser`). The root service signs each path with
   9D; fingerprints come from the local store database, so a queue can only get real store
   paths signed. Paths already carrying the signature are skipped.
-- Both share the card; a cache signing run and agent signatures interleave without trouble
-  (tested).
+- Both share the card. `nix-piv` opens it shared and leaves it powered when done, so cache
+  signing and agent signatures interleave (tested on a YubiKey 4). Tools that power the card
+  off on disconnect, like `ykman` and pyscard's defaults, end the agent's session with the card:
+  after using them on a running server, `systemctl restart piv-agent-unlock`.
 
 ### Cache signatures: dual-sign
 

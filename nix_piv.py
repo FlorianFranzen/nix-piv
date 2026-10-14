@@ -153,24 +153,63 @@ def verify_signature(public_key, algorithm: str, sig: bytes, message: bytes) -> 
 
 # --- PIV -----------------------------------------------------------------------------------
 
+class SharedConnection:
+    """A PC/SC connection that shares the card and leaves it as it is when done.
+
+    ykman's own connections try exclusive access first and pyscard powers the card off on
+    disconnect (SCARD_UNPOWER_CARD). On a real card that ends every other session with it,
+    e.g. the PKCS#11 session of an ssh-agent holding the card's keys, which then refuses to
+    sign until the card is added to it again. Shared access and SCARD_LEAVE_CARD avoid that.
+    """
+
+    def __init__(self, reader):
+        from smartcard.scard import SCARD_LEAVE_CARD, SCARD_SHARE_SHARED
+        from yubikit.core import TRANSPORT
+
+        self.connection = reader.createConnection()
+        self.connection.connect(mode=SCARD_SHARE_SHARED, disposition=SCARD_LEAVE_CARD)
+        atr = self.connection.getATR()
+        self.transport = TRANSPORT.USB if atr and atr[1] & 0xF0 == 0xF0 else TRANSPORT.NFC
+
+    def send_and_receive(self, apdu):
+        data, sw1, sw2 = self.connection.transmit(list(apdu))
+        return bytes(data), sw1 << 8 | sw2
+
+    def close(self):
+        self.connection.disconnect()
+        if hasattr(self.connection, "release"):
+            self.connection.release()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+
+
 def open_piv(reader: str):
     """Open the first reader matching `reader` that holds a PIV card."""
-    from ykman.pcsc import list_devices
+    from smartcard.System import readers
     from yubikit.core.smartcard import SmartCardConnection
     from yubikit.piv import PivSession
 
+    # PivSession only needs the SmartCardConnection interface
+    SmartCardConnection.register(SharedConnection)
+
     errors = []
-    for device in list_devices(reader):
+    for r in readers():
+        if reader.lower() not in str(r).lower():
+            continue
         try:
-            conn = device.open_connection(SmartCardConnection)
-        except Exception as err:  # empty reader, card busy, ...
-            errors.append(f"{device}: {err}")
+            conn = SharedConnection(r)
+        except Exception as err:  # empty reader, ...
+            errors.append(f"{r}: {err}")
             continue
         try:
             return PivSession(conn), conn
         except Exception as err:
             conn.close()
-            errors.append(f"{device}: {err}")
+            errors.append(f"{r}: {err}")
     detail = "; ".join(errors) or "no readers"
     raise SystemExit(f"no PIV card in a reader matching {reader!r} ({detail})")
 
