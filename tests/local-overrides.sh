@@ -6,4 +6,4 @@ set -euo pipefail
 cd "$(dirname "$0")"
 exec nix "$@" --accept-flake-config \
   --override-input piv-authenticator "path:${PIV_AUTHENTICATOR:-$HOME/Gli.al/piv-authenticator-version-gating}" \
-  --override-input mind-the-gap "git+file://${MIND_THE_GAP:-$HOME/Glial/mind-the-gap-yk4}"
+  --override-input mind-the-gap "git+file://${MIND_THE_GAP:-$HOME/Glial/mind-the-gap}"

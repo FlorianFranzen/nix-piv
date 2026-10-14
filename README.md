@@ -17,6 +17,12 @@ Works with any PIV card that has P-384, from the YubiKey 4 on. The tests run on 
 card that behaves like a YubiKey 4 (firmware 4.3.7: no GET METADATA, 3DES management key,
 no Ed25519).
 
+**Tested on a real YubiKey 4** (firmware 4.3.7, FIDO+CCID mode) on 2026-10-14, with both
+provisioning variants (about 5 seconds each). With PIN policy once, touch policy never, and the
+PIN fed once to the agent, the card produced SSH signatures from 9A, a git commit signature
+from 9C, and ECDSA P-384 cache signatures from 9D (about 330 ms per path, accepted by
+Determinate Nix), all unattended, and the agent kept signing across direct card sessions.
+
 ## What is in here
 
 | | |
@@ -50,12 +56,12 @@ On the air-gapped machine (mind-the-gap's live image), with the card plugged in:
 
 ```sh
 mind-the-gap -s '<24 words>' -k pavlov-1 -n 'pavlov builder' \
-  piv --curve p384 --pin-policy once --touch-policy never --management-key-touch never \
+  piv --algorithm p384 --pin-policy once --touch-policy never --management-key-touch never \
   upload -c <card serial> --pin <new PIN> --yes
 ```
 
 - `-k pavlov-1` names this generation of keys; a different value gives different keys.
-- `--curve p384` because the cache key must be ECDSA P-384 for Determinate Nix, and the curve
+- `--algorithm p384` because the cache key must be ECDSA P-384 for Determinate Nix, and the algorithm
   applies to every slot. nistp384 works for OpenSSH, GitHub and comin.
 - `--pin-policy once --touch-policy never`: one PIN per agent session, no button presses.
 - `--management-key-touch never`: provisioning happens air-gapped and the derived management
@@ -68,7 +74,7 @@ To check a card later: the same command with `check --pin <PIN>` instead of `upl
 cards without GET METADATA (YubiKey 4) `check` proves each key with a signature challenge;
 the PIN and touch policies cannot be read back on those cards.
 
-Needs mind-the-gap from its `piv-yubikey4` branch (P-384, 3DES management key,
+Needs mind-the-gap from its `piv-certificate-chain` branch (P-384, 3DES management key,
 `--management-key-touch`).
 
 ### Variant B: keys generated on the card
@@ -191,7 +197,7 @@ cd tests && nix flake check -L --accept-flake-config
 ```
 
 Two of those inputs (the `feat/version-gating` branch of the piv-authenticator fork and
-mind-the-gap's `piv-yubikey4` branch) are not published yet; until they are, run against the
+mind-the-gap's `piv-certificate-chain` branch) are not published yet; until they are, run against the
 local checkouts:
 
 ```sh

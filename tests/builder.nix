@@ -37,7 +37,7 @@ let
     if variant == "random" then
       "nix-piv-provision --reader '${reader}' --name ${principal} --pin ${pin} --puk 87654321 --yes"
     else
-      "mind-the-gap -s '${seed}' -k pavlov-1 -n '${principal}' piv --curve p384"
+      "mind-the-gap -s '${seed}' -k pavlov-1 -n '${principal}' piv --algorithm p384"
       + " --pin-policy once --touch-policy never --management-key-touch never"
       + " upload -c 5437251 --pin ${pin} --yes";
 
@@ -179,7 +179,7 @@ in
         print(info)
         assert "Management key algorithm: TDES" in info, info
         ${lib.optionalString (variant == "mtg") ''
-        print(server.succeed("mind-the-gap -s '${seed}' -k pavlov-1 -n '${principal}' piv --curve p384 --pin-policy once --touch-policy never --management-key-touch never check -c 5437251 --pin ${pin} 2>&1"))
+        print(server.succeed("mind-the-gap -s '${seed}' -k pavlov-1 -n '${principal}' piv --algorithm p384 --pin-policy once --touch-policy never --management-key-touch never check -c 5437251 --pin ${pin} 2>&1"))
         ''}
 
     with subtest("nix-piv reads the keys from the slot certificates"):

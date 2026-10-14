@@ -20,8 +20,8 @@
     };
 
     # Provisioning with keys derived from a seed (P-384, 3DES management key and
-    # --management-key-touch are on the piv-yubikey4 branch)
-    mind-the-gap.url = "github:FlorianFranzen/mind-the-gap/piv-yubikey4";
+    # --management-key-touch are on the piv-certificate-chain branch)
+    mind-the-gap.url = "github:FlorianFranzen/mind-the-gap/piv-certificate-chain";
 
     # The only Nix that verifies ECDSA P-384 store path signatures (experimental `cnsa`)
     determinate-nix.url = "https://flakehub.com/f/DeterminateSystems/nix-src/3.23.1.tar.gz";
