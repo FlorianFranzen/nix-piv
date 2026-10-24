@@ -30,7 +30,7 @@ Determinate Nix), all unattended, and the agent kept signing across direct card 
 | `nix-piv` | CLI: card info, public keys in every format the setup needs (`pubkeys`), store path signatures (`sign`, `verify`, `fingerprint`) |
 | `nix-piv-provision` | provisions a card with keys **generated on the card** (variant B) |
 | `nix-piv-seal-pin` | seals the card PIN as a systemd credential |
-| `nixosModules.agent` | `services.piv-agent`: an ssh-agent holding the card's keys, unlocked at boot from the sealed PIN, optionally used by nix-daemon |
+| `nixosModules.agent` | `services.piv-agent`: an ssh-agent holding the card's keys, unlocked at boot from the sealed PIN, optionally used by nix-daemon and, through a group socket, by local applications |
 | `nixosModules.cache-signer` | `services.piv-cache-signer`: a root service that signs a `file://` cache with the 9D key on request |
 | `tests/` | a separate flake with the VM tests (`checks.x86_64-linux.builder-{random,mtg}`: the whole chain in two VMs, once per provisioning variant) and the virtual card they use |
 | `docs/DESIGN.md` | why store path signatures need a digest for hardware keys, prior art, device limits, the upstream proposal |
@@ -159,6 +159,12 @@ an SSH allowed signer, so human GPG-signed commits keep working).
   PKCS#11 module. `piv-agent-unlock` (root) feeds it the PIN from the sealed credential; the
   agent user never sees the PIN. OpenSC is told to reuse that PIN for 9C, which PIV marks as
   "user consent".
+- **Local applications** running as other users (a deploy script, a pipeline that does not run
+  as the agent user) get the agent through `accessGroup`: ssh-agent itself serves only its
+  own user and root, so a second socket, `sharedSocket` (`/run/piv-agent-shared/agent.sock`,
+  `0660`, owned by that group), is forwarded to it by `systemd-socket-proxyd` running as the
+  agent user. Members can list the keys and have them sign, not take them away; add users to
+  the group to let them, e.g. `services.piv-agent.accessGroup = "piv-agent";`.
 - **piv-cache-signer**: the pipeline writes the store paths it pushed to a queue file and runs
   `requestCommand <cache dir> <queue>`, which starts `piv-cache-sign@<queue>.service` through
   polkit (only these units, only for `allowedUser`). The root service signs each path with
@@ -196,9 +202,9 @@ Determinate Nix) stay out of the lock files of configurations that use nix-piv:
 cd tests && nix flake check -L --accept-flake-config
 ```
 
-Two of those inputs (the `feat/version-gating` branch of the piv-authenticator fork and
-mind-the-gap's `piv-certificate-chain` branch) are not published yet; until they are, run against the
-local checkouts:
+One of those inputs, the `feat/version-gating` branch of the piv-authenticator fork, is not
+published yet; until it is, run against its local checkout (`$PIV_AUTHENTICATOR`;
+`MIND_THE_GAP=<checkout>?ref=<branch>` uses a local mind-the-gap too):
 
 ```sh
 tests/local-overrides.sh flake check -L

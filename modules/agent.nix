@@ -5,6 +5,11 @@
 # PKCS#11 module. A root oneshot unlocks it with the PIN from a systemd credential sealed by
 # `nix-piv-seal-pin` (systemd-creds --with-key=auto), so the PIN never reaches `user`.
 # With `nixDaemon`, nix-daemon gets the agent's socket and remote builders need no key file.
+#
+# ssh-agent serves only its own user and root (it checks the peer's uid). With `accessGroup`,
+# local applications running as other users reach it through a second socket, `sharedSocket`,
+# open to that group: systemd-socket-proxyd, running as the agent user, forwards each
+# connection, so members can list the keys and have them sign, never take them away.
 { config, lib, pkgs, ... }:
 
 let
@@ -69,6 +74,23 @@ in
       description = "PKCS#11 module the agent loads the card's keys through.";
     };
 
+    accessGroup = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = "piv-agent";
+      description = ''
+        Group whose members may use the agent through `sharedSocket`, besides the agent user
+        and root (which use `socket`): local applications such as a build pipeline or a deploy
+        script join it instead of running as the agent user. Created unless it exists.
+      '';
+    };
+
+    sharedSocket = lib.mkOption {
+      type = lib.types.str;
+      default = "/run/piv-agent-shared/agent.sock";
+      description = "Socket open to `accessGroup` (`SSH_AUTH_SOCK` for its members).";
+    };
+
     nixDaemon = lib.mkOption {
       type = lib.types.bool;
       default = false;
@@ -89,7 +111,10 @@ in
         group = cfg.group;
       };
     };
-    users.groups = lib.mkIf (cfg.user == "piv-agent") { ${cfg.group} = { }; };
+    users.groups = lib.mkMerge [
+      (lib.mkIf (cfg.user == "piv-agent") { ${cfg.group} = { }; })
+      (lib.mkIf (cfg.accessGroup != null) { ${cfg.accessGroup} = { }; })
+    ];
 
     # pcsc-lite asks polkit whether a client may talk to readers and cards; let the agent user
     security.polkit.extraConfig = lib.mkIf (cfg.user != "root") ''
@@ -147,6 +172,35 @@ in
         ssh-add -s ${cfg.pkcs11Module} < /dev/null
         ssh-add -l
       '';
+    };
+
+    # the shared socket: owned by root, open to the group; connections are forwarded by a
+    # proxy running as the agent user, which is who ssh-agent then sees
+    systemd.sockets.piv-agent-shared = lib.mkIf (cfg.accessGroup != null) {
+      description = "Shared socket of the PIV agent";
+      wantedBy = [ "sockets.target" ];
+      socketConfig = {
+        ListenStream = cfg.sharedSocket;
+        SocketUser = "root";
+        SocketGroup = cfg.accessGroup;
+        SocketMode = "0660";
+        DirectoryMode = "0755";
+      };
+    };
+
+    systemd.services.piv-agent-shared = lib.mkIf (cfg.accessGroup != null) {
+      description = "Forward the shared socket's connections to the PIV agent";
+      requires = [ "piv-agent.service" "piv-agent-shared.socket" ];
+      after = [ "piv-agent.service" "piv-agent-shared.socket" ];
+      serviceConfig = {
+        User = cfg.user;
+        Group = cfg.group;
+        ExecStart = "${config.systemd.package}/lib/systemd/systemd-socket-proxyd ${cfg.socket}";
+        NoNewPrivileges = true;
+        PrivateTmp = true;
+        ProtectSystem = "strict";
+        ProtectHome = true;
+      };
     };
 
     systemd.services.nix-daemon.environment = lib.mkIf cfg.nixDaemon {

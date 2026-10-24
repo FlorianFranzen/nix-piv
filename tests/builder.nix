@@ -103,7 +103,14 @@ in
       enable = true;
       user = "ftl";
       nixDaemon = true;
+      # local applications: members use the shared socket
+      accessGroup = "piv-users";
     };
+    users.users.app = {
+      isNormalUser = true;
+      extraGroups = [ "piv-users" ];
+    };
+    users.users.stranger.isNormalUser = true;
     services.piv-cache-signer = {
       enable = true;
       cacheDir = "/var/lib/ftl/cache";
@@ -206,6 +213,16 @@ in
         fingerprint = server.succeed(
             f"echo '{ssh_key}' | ssh-keygen -lf - | cut -d' ' -f2"
         ).strip()
+
+    with subtest("members of the access group use the agent through the shared socket"):
+        shared = "SSH_AUTH_SOCK=/run/piv-agent-shared/agent.sock"
+        def as_user(user, cmd):
+            return f"su {user} -s ${pkgs.bash}/bin/bash -c {shlex.quote(cmd)}"
+        listed = server.succeed(as_user("app", f"{shared} ssh-add -L"))
+        assert ssh_key.split()[1] in listed, listed
+        # the shared socket is the group's only, the agent's own socket stays private
+        server.fail(as_user("stranger", f"{shared} ssh-add -L 2>&1"))
+        server.fail(as_user("app", f"{agent} ssh-add -L 2>&1"))
 
     with subtest("the builder trusts 9A; a remote build runs there"):
         builder.succeed("install -d -m 700 -o ftl-build /home/ftl-build/.ssh")
